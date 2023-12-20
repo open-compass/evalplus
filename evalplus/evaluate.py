@@ -121,30 +121,30 @@ def check_correctness(
 
 
 def evaluate(flags):
-    if flags.parallel is None:
+    if flags['parallel'] is None:
         n_workers = max(1, multiprocessing.cpu_count() // 2)
     else:
-        n_workers = flags.parallel
+        n_workers = flags['parallel']
 
-    if os.path.isdir(flags.samples):
-        result_path = os.path.join(flags.samples, "eval_results.json")
+    if os.path.isdir(flags['samples']):
+        result_path = os.path.join(flags['samples'], "eval_results.json")
     else:
-        assert flags.samples.endswith(".jsonl")
-        result_path = flags.samples.replace(".jsonl", "_eval_results.json")
+        assert flags['samples'].endswith(".jsonl")
+        result_path = flags['samples'].replace(".jsonl", "_eval_results.json")
 
-    if os.path.isfile(result_path) and not flags.i_just_wanna_run:
+    if os.path.isfile(result_path) and not flags['i_just_wanna_run']:
         print(f"Load from previous results from {result_path}")
         with open(result_path, "r") as f:
             results = json.load(f)
 
         results = compatible_eval_result(results)
     else:
-        if flags.dataset == "humaneval":
-            problems = get_human_eval_plus(mini=flags.mini)
+        if flags['dataset'] == "humaneval":
+            problems = get_human_eval_plus(mini=flags['mini'])
             dataset_hash = get_human_eval_plus_hash()
             expected_output = get_groundtruth(problems, dataset_hash, [])
-        elif flags.dataset == "mbpp":
-            problems = get_mbpp_plus(mini=flags.mini)
+        elif flags['dataset'] == "mbpp":
+            problems = get_mbpp_plus(mini=flags['mini'])
             dataset_hash = get_mbpp_plus_hash()
             expected_output = get_groundtruth(
                 problems,
@@ -166,7 +166,7 @@ def evaluate(flags):
             remainings = set()
 
             print("Reading samples...")
-            for sample in tqdm(load_solutions(flags.samples)):
+            for sample in tqdm(load_solutions(flags['samples'])):
                 task_id = sample["task_id"]
                 solution = (
                     sample["solution"]
@@ -175,16 +175,16 @@ def evaluate(flags):
                 )
                 remainings.add(sample["_identifier"])
                 args = (
-                    flags.dataset,
+                    flags['dataset'],
                     completion_id[task_id],
                     problems[task_id],
                     solution,
                     expected_output[task_id],
-                    flags.base_only,
-                    not flags.test_details,  # fast_check
+                    flags['base_only'],
+                    not flags['test_details'],  # fast_check
                     sample["_identifier"],
-                    flags.min_time_limit,
-                    flags.gt_time_limit_factor,
+                    flags['min_time_limit'],
+                    flags['gt_time_limit_factor'],
                 )
                 futures.append(executor.submit(check_correctness, *args))
                 completion_id[task_id] += 1
@@ -217,11 +217,11 @@ def evaluate(flags):
                 "nfiles": len(task_results),
                 "base": [x["base"] for x in task_results],
                 "plus": [x["plus"] for x in task_results]
-                if not flags.base_only
+                if not flags['base_only']
                 else [],
             }
 
-    if os.path.isfile(result_path) and flags.i_just_wanna_run:
+    if os.path.isfile(result_path) and flags['i_just_wanna_run']:
         decision = ""
         while decision.lower() not in ["y", "n"]:
             print(f"{result_path} already exists. Press [Y/N] to overwrite or exit...")
@@ -259,42 +259,33 @@ def evaluate(flags):
     base_correct = np.array(base_correct)
 
     pass_at_k = {
-        f"pass@{k}": estimate_pass_at_k(total, base_correct, k).mean()
+        f"pass@{k}": estimate_pass_at_k(total, np.array(new_correct), k).mean()
         for k in [1, 10, 100]
-        if total.min() >= k
+        if (total >= k).all()
     }
-    cprint(f"{flags.dataset} (base tests)", "red")
+    score = dict()
     for k, v in pass_at_k.items():
-        cprint(f"{k}:\t{v:.3f}", "red")
-
-    if new_correct:
-        cprint(f"{flags.dataset}+ (base + extra tests)", "green")
-        pass_at_k = {
-            f"pass@{k}": estimate_pass_at_k(total, np.array(new_correct), k).mean()
-            for k in [1, 10, 100]
-            if (total >= k).all()
-        }
-        for k, v in pass_at_k.items():
-            cprint(f"{k}:\t{v:.3f}", "green")
+        score[k] = v
+    return score
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--dataset", required=True, type=str, choices=["humaneval", "mbpp"]
-    )
-    parser.add_argument("--samples", required=True, type=str)
-    parser.add_argument("--base-only", action="store_true")
-    parser.add_argument("--parallel", default=None, type=int)
-    parser.add_argument("--i-just-wanna-run", action="store_true")
-    parser.add_argument("--test-details", action="store_true")
-    parser.add_argument("--min-time-limit", default=0.2, type=float)
-    parser.add_argument("--gt-time-limit-factor", default=4.0, type=float)
-    parser.add_argument("--mini", action="store_true")
-    args = parser.parse_args()
+# def main():
+#     parser = argparse.ArgumentParser()
+#     parser.add_argument(
+#         "--dataset", required=True, type=str, choices=["humaneval", "mbpp"]
+#     )
+#     parser.add_argument("--samples", required=True, type=str)
+#     parser.add_argument("--base-only", action="store_true")
+#     parser.add_argument("--parallel", default=None, type=int)
+#     parser.add_argument("--i-just-wanna-run", action="store_true")
+#     parser.add_argument("--test-details", action="store_true")
+#     parser.add_argument("--min-time-limit", default=0.2, type=float)
+#     parser.add_argument("--gt-time-limit-factor", default=4.0, type=float)
+#     parser.add_argument("--mini", action="store_true")
+#     args = parser.parse_args()
 
-    evaluate(args)
+#     evaluate(args)
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
